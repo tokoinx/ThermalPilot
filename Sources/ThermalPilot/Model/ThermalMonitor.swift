@@ -14,6 +14,8 @@ final class ThermalMonitor {
     private(set) var lastError: String?
     private(set) var lowPowerModeOn: Bool?
     private(set) var isThermalctlInstalled = false
+    /// thermalctl boost / curve がバックグラウンドで動いているか (PID ファイルで判定)。
+    private(set) var isFanBoostActive = false
 
     let settings: AppSettings
     let isAppleSilicon: Bool
@@ -67,6 +69,7 @@ final class ThermalMonitor {
         // センサー読み取りと ps はバックグラウンドで
         let snap = await Task.detached(priority: .utility) { engine.snapshot(processLimit: limit) }.value
         apply(snap)
+        isFanBoostActive = BackgroundFanController.isRunning
         if snapshot.level >= .hot || lowPowerModeOn == nil {
             lowPowerModeOn = await CoolDownActions.isLowPowerModeOn()
         }
@@ -133,18 +136,24 @@ final class ThermalMonitor {
         refreshNow()
     }
 
-    func boostFans() {
+    func boostFans(minutes: Int = 10) {
         Task {
-            let ok = await CoolDownActions.runThermalctl(["boost"])
-            lastError = ok ? nil : "thermalctl boost に失敗しました"
+            // boost は最大 N 分のループなので、バックグラウンドで起動してすぐ戻る
+            let ok = await CoolDownActions.runThermalctl(["boost", "--minutes", String(minutes)], detached: true)
+            lastError = ok ? nil : "thermalctl boost の起動に失敗しました (認証がキャンセルされた可能性)"
+            // 起動直後は PID ファイルがまだ無いことがあるので少し待ってから確認
+            try? await Task.sleep(for: .seconds(1.5))
+            isFanBoostActive = BackgroundFanController.isRunning
             refreshNow()
         }
     }
 
     func restoreFansAuto() {
         Task {
+            // thermalctl auto は、裏で動いている boost / curve を止めてから自動へ戻す
             let ok = await CoolDownActions.runThermalctl(["auto"])
-            lastError = ok ? nil : "thermalctl auto に失敗しました"
+            lastError = ok ? nil : "thermalctl auto に失敗しました (認証がキャンセルされた可能性)"
+            isFanBoostActive = BackgroundFanController.isRunning
             refreshNow()
         }
     }

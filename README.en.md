@@ -71,6 +71,7 @@ sudo thermalctl auto             # back to automatic control
 | "cannot be opened because the developer cannot be verified" | Ad-hoc signature. Right-click → Open, or System Settings → Privacy & Security → Open Anyway. If Xcode is signed in, the free "Apple Development" certificate is picked up automatically and the warning disappears |
 | Temperatures show "not detected" | Virtual machine, or IOHID blocked. Check `thermalctl keys T` for SMC-side keys |
 | No fan section | Fanless Mac (MacBook Air) or SMC not found. Check with `thermalctl fans` |
+| "Restore auto" does nothing after "Fan boost" | Known bug in v0.1.0 (the boost loop kept re-applying). `auto` now stops boost/curve first via the PID file at `/var/run/thermalctl.pid`. If an old boost is still running: `sudo pkill -f "thermalctl boost"` |
 
 ## Design notes
 

@@ -64,7 +64,11 @@ sudo thermalctl curve            # 温度追従カーブ (Ctrl-C で自動へ復
 sudo thermalctl auto             # 自動制御に戻す
 ```
 
-`thermalctl` を入れると、アプリのパネルに **「ファン全開」「自動に戻す」** ボタンが現れます。
+アプリには `thermalctl` が同梱されているので、ファン付きの Mac ではパネルに **「ファン全開 (10 分)」「自動に戻す」** ボタンが出ます。
+
+- 「ファン全開」は `thermalctl boost` をバックグラウンドで起動し、10 分間 (または「自動に戻す」まで) 全開を維持します。実行中はパネルに「ブースト中」と出ます。
+- 「自動に戻す」は、裏で動いている boost / curve を止めてから自動制御へ戻します。止めずに戻そうとしても 2 秒後に再設定されるため、必ずこの順番で処理しています。
+- boost / curve は PID を `/var/run/thermalctl.pid` に記録します。ターミナルから `sudo thermalctl auto` でも同じように停止できます。
 
 ## トラブルシューティング
 
@@ -74,6 +78,7 @@ sudo thermalctl auto             # 自動制御に戻す
 | 「開発元を確認できないため開けません」 | ad-hoc 署名のため。右クリック →「開く」、または システム設定 → プライバシーとセキュリティ →「このまま開く」。Xcode にサインインしていれば無料の "Apple Development" 証明書が自動で使われ、この警告は出ない |
 | 温度が「未検出」 | 仮想マシン、または IOHID が塞がれた環境。`thermalctl keys T` で SMC 側のキーがあるか確認 |
 | ファン欄が出ない | ファンレス機 (MacBook Air) か SMC 未検出。`thermalctl fans` で確認 |
+| 「自動に戻す」を押しても戻らない | v0.1.0 の既知バグ (boost ループが生き残っていた)。最新版では `auto` が先に boost を止めます。古い版が動いたままなら `sudo pkill -f "thermalctl boost"` |
 
 ## 初回起動時に出るもの
 

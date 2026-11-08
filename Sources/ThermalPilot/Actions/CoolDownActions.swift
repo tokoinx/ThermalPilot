@@ -53,19 +53,25 @@ enum CoolDownActions {
     // MARK: thermalctl 連携
 
     static func thermalctlPath() -> String? {
+        // 同梱版を最優先 (アプリと同じビルドなので挙動が一致する)。無ければ手動インストール先を探す。
         let candidates = [
+            Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/thermalctl").path,
             "/usr/local/bin/thermalctl",
             "/opt/homebrew/bin/thermalctl",
-            Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/thermalctl").path,
         ]
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     /// `sudo thermalctl <args>` 相当を、管理者認証ダイアログ付きで実行する。
-    static func runThermalctl(_ args: [String]) async -> Bool {
+    /// `detached: true` なら nohup + & でバックグラウンド起動し、すぐ戻る (boost / curve のような長時間ループ用)。
+    static func runThermalctl(_ args: [String], detached: Bool = false) async -> Bool {
         guard let path = thermalctlPath() else { return false }
-        let cmd = ([path] + args).map { $0.replacingOccurrences(of: "\"", with: "\\\"") }.joined(separator: " ")
-        let script = "do shell script \"\(cmd)\" with administrator privileges"
+        var cmd = ([path] + args).map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
+        if detached {
+            cmd = "nohup \(cmd) >/dev/null 2>&1 &"
+        }
+        let escaped = cmd.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let script = "do shell script \"\(escaped)\" with administrator privileges"
         return await runAppleScript(script)
     }
 

@@ -67,6 +67,50 @@ public enum FanControlError: Error, CustomStringConvertible {
     }
 }
 
+/// `thermalctl boost` / `curve` のようにバックグラウンドでファンを握り続けるプロセスの管理。
+/// PID ファイルは root が書き、アプリ (一般ユーザー) は読むだけ。
+public enum BackgroundFanController {
+    public static let pidFilePath = "/var/run/thermalctl.pid"
+
+    /// 実行中のコントローラの PID。ファイルが無い・プロセスが死んでいれば nil。
+    public static func runningPID() -> pid_t? {
+        guard let text = try? String(contentsOfFile: pidFilePath, encoding: .utf8),
+              let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 0 else { return nil }
+        // kill(pid, 0): 存在すれば 0。root のプロセスに対して一般ユーザーが呼ぶと EPERM だが、それも「存在する」証拠。
+        if kill(pid, 0) == 0 || errno == EPERM { return pid }
+        return nil
+    }
+
+    public static var isRunning: Bool { runningPID() != nil }
+
+    /// 自分を登録する (root で実行される boost / curve 用)。
+    public static func register() {
+        try? "\(getpid())\n".write(toFile: pidFilePath, atomically: true, encoding: .utf8)
+    }
+
+    public static func unregister() {
+        if runningPID() == getpid() || runningPID() == nil {
+            try? FileManager.default.removeItem(atPath: pidFilePath)
+        }
+    }
+
+    /// 実行中のコントローラに SIGTERM を送り、終了を待つ (最大 timeout 秒)。停止できたら true。
+    @discardableResult
+    public static func stop(timeout: TimeInterval = 6) -> Bool {
+        guard let pid = runningPID() else { return true }
+        kill(pid, SIGTERM)
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if kill(pid, 0) != 0 && errno == ESRCH {
+                try? FileManager.default.removeItem(atPath: pidFilePath)
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        return false
+    }
+}
+
 #if canImport(IOKit)
 public final class FanController {
     private let smc: SMC

@@ -51,6 +51,7 @@ description: Mac の温度・ファン・SMC・IOHID センサーを扱う Swift
 - thermalmonitord は数秒で制御を取り戻す → 継続制御はループで再設定し続ける (`thermalctl curve`)。
 - スリープ復帰で `Ftst` はリセット。
 - 0 rpm まで落とせるのは OS だけ。十分冷えたら auto に返す。
+- **boost / curve は長時間ループ**。`auto` は必ず先に `BackgroundFanController.stop()` で止める (止めないと 2 秒後に再設定されて「戻らない」バグになる)。アプリからは `nohup ... &` で detached 起動し、`do shell script` を 10 分ブロックさせない。
 - M2 / M3 は未検証。実機で `thermalctl keys F` を見てから書く。
 
 ## 権限と配布

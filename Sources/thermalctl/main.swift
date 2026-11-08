@@ -59,7 +59,7 @@ func printStatus(_ snap: ThermalSnapshot) {
         }
     }
     if !snap.fans.isEmpty {
-        print("[ファン]")
+        print("[ファン]" + (BackgroundFanController.runningPID().map { "  ※ thermalctl boost/curve 実行中 (PID \($0))" } ?? ""))
         for f in snap.fans {
             let range = (f.minRPM.map { Int($0) } ?? 0, f.maxRPM.map { Int($0) } ?? 0)
             print("  ファン\(f.index + 1)  \(bar(f.loadFraction ?? 0))  \(ThermalFormat.rpm(f.actualRPM))  目標 \(ThermalFormat.rpm(f.targetRPM))  範囲 \(range.0)〜\(range.1)  \(f.modeLabel)")
@@ -85,13 +85,26 @@ func requireFans() -> FanController {
     return fc
 }
 
-/// Ctrl-C / 終了時に自動へ戻す。
+/// Ctrl-C / SIGTERM (= `thermalctl auto` からの停止要求) で自動へ戻す。PID ファイルも登録する。
 func installRestoreOnExit(_ fc: FanController) {
+    // 先に動いている boost / curve があれば止める (二重起動で綱引きにならないように)
+    if BackgroundFanController.isRunning {
+        print("既に動いているファン制御を停止します…")
+        BackgroundFanController.stop()
+    }
+    BackgroundFanController.register()
     signal(SIGINT) { _ in
         // シグナルハンドラ内では最小限の処理のみ。グローバルの restore フラグを立てて抜ける。
         restoreRequested = 1
     }
     signal(SIGTERM) { _ in restoreRequested = 1 }
+}
+
+/// ループを抜けた後の後始末。
+func finishBackgroundControl(_ fc: FanController) {
+    fc.restoreAutoAll()
+    BackgroundFanController.unregister()
+    print("自動制御に戻しました。")
 }
 #endif
 
@@ -175,9 +188,8 @@ case "boost":
             for f in fc.readFans() where f.mode != 1 { try? fc.setTarget(fan: f.index, rpm: f.maxRPM ?? 6000) }
             Thread.sleep(forTimeInterval: 2)
         }
-        fc.restoreAutoAll()
-        print("自動制御に戻しました。")
-    } catch { fc.restoreAutoAll(); fail("\(error)") }
+        finishBackgroundControl(fc)
+    } catch { finishBackgroundControl(fc); fail("\(error)") }
     #else
     fail("macOS 専用")
     #endif
@@ -185,6 +197,11 @@ case "boost":
 case "auto":
     #if canImport(IOKit)
     let fc = requireFans()
+    // 裏で boost / curve が動いていたら、まずそれを止める (止めないと 2 秒後に再設定されて「戻らない」)
+    if let pid = BackgroundFanController.runningPID() {
+        print("実行中のファン制御 (PID \(pid)) を停止します…")
+        if !BackgroundFanController.stop() { print("警告: 停止を確認できませんでした。手動で kill \(pid) を試してください。") }
+    }
     if args.count >= 2, let fan = Int(args[1]) {
         do { try fc.restoreAuto(fan: fan); print("ファン\(fan + 1) を自動に戻しました") } catch { fail("\(error)") }
     } else {
@@ -217,8 +234,7 @@ case "curve":
         }
         Thread.sleep(forTimeInterval: 3)
     }
-    fc.restoreAutoAll()
-    print("自動制御に戻しました。")
+    finishBackgroundControl(fc)
     #else
     fail("macOS 専用")
     #endif

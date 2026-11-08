@@ -142,7 +142,9 @@ struct MenuView: View {
                     Image(systemName: "fan.fill")
                         .symbolEffect(.pulse, options: .repeating, isActive: fan.actualRPM > 50)
                     Text("ファン \(fan.index + 1)").font(.callout)
-                    Text(fan.modeLabel).font(.caption2).foregroundStyle(.secondary)
+                    Text(monitor.isFanBoostActive ? "ブースト中" : fan.modeLabel)
+                        .font(.caption2)
+                        .foregroundStyle(monitor.isFanBoostActive ? .orange : .secondary)
                     Spacer()
                     if let frac = fan.loadFraction {
                         ProgressView(value: frac).frame(width: 70)
@@ -207,9 +209,19 @@ struct MenuView: View {
             }
             if monitor.isThermalctlInstalled, !snap.fans.isEmpty {
                 HStack {
-                    Button { monitor.boostFans() } label: { Label("ファン全開", systemImage: "wind") }
-                        .help("thermalctl boost (管理者認証)")
-                    Button { monitor.restoreFansAuto() } label: { Label("自動に戻す", systemImage: "arrow.uturn.backward") }
+                    if monitor.isFanBoostActive {
+                        Label("ブースト中", systemImage: "wind")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.orange)
+                        Button { monitor.restoreFansAuto() } label: { Label("自動に戻す", systemImage: "arrow.uturn.backward") }
+                            .buttonStyle(.borderedProminent)
+                            .help("ブーストを止めて thermalctl auto を実行 (管理者認証)")
+                    } else {
+                        Button { monitor.boostFans() } label: { Label("ファン全開 (10 分)", systemImage: "wind") }
+                            .help("thermalctl boost を 10 分間バックグラウンドで実行 (管理者認証)")
+                        Button { monitor.restoreFansAuto() } label: { Label("自動に戻す", systemImage: "arrow.uturn.backward") }
+                            .help("手動モードが残っていれば自動へ戻す (管理者認証)")
+                    }
                     Spacer()
                 }
             } else if !snap.fans.isEmpty {
