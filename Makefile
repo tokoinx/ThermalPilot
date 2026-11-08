@@ -14,6 +14,7 @@ cli:
 
 install:
 	sudo ./scripts/install-cli.sh
+	rm -rf /Applications/ThermalPilot.app
 	cp -R dist/ThermalPilot.app /Applications/
 
 test:

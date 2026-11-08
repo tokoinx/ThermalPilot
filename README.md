@@ -79,7 +79,8 @@ sudo thermalctl auto             # 自動制御に戻す
 | 温度が「未検出」 | 仮想マシン、または IOHID が塞がれた環境。`thermalctl keys T` で SMC 側のキーがあるか確認 |
 | ファン欄が出ない | ファンレス機 (MacBook Air) か SMC 未検出。`thermalctl fans` で確認 |
 | 更新したのに挙動が変わらない | `open` は同じ ID のアプリが起動中だと **古い方を前面に出すだけ** で新しいビルドを起動しません。build-app.sh が起動中のアプリを自動終了するようにしたので、ビルド後に `open` し直してください。新版は別の場所にある旧版を起動時に終了させます |
-| 「自動に戻す」を押しても戻らない | v0.1.0 の既知バグ (boost ループが生き残っていた)。最新版では `auto` が先に boost を止めます。古い版が動いたままなら `sudo pkill -f "thermalctl boost"` |
+| `open /Applications/ThermalPilot.app` が「存在しない」と言う | 既にある .app の上に `cp -R` すると入れ子にコピーされて壊れます。`rm -rf /Applications/ThermalPilot.app` してからコピーし直してください |
+| 「自動に戻す」を押しても戻らない | v0.1.0 の既知バグ (boost ループが生き残っていた)。最新版では `auto` が先に boost を止めます (SIGTERM → 8 秒で SIGALRM 番犬 → SIGKILL)。古い版が動いたままなら `sudo pkill -9 -f thermalctl` |
 
 ## 初回起動時に出るもの
 

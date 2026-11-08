@@ -93,11 +93,19 @@ func installRestoreOnExit(_ fc: FanController) {
         BackgroundFanController.stop()
     }
     BackgroundFanController.register()
-    signal(SIGINT) { _ in
-        // シグナルハンドラ内では最小限の処理のみ。グローバルの restore フラグを立てて抜ける。
-        restoreRequested = 1
+    // シグナルハンドラ内では最小限の処理のみ: restore フラグを立て、8 秒の番犬 (SIGALRM) を仕掛ける。
+    // ループが何らかの理由で抜けられなくても、SIGALRM の既定動作で確実にプロセスが終了する
+    // (ファンは手動のまま残るが、`thermalctl auto` がその後で戻す)。
+    signal(SIGINT) { _ in restoreRequested = 1; alarm(8) }
+    signal(SIGTERM) { _ in restoreRequested = 1; alarm(8) }
+}
+
+/// restoreRequested を見ながら細かく眠る (停止要求に 0.2 秒以内で反応するため)。
+func sleepUnlessStopped(_ seconds: Double) {
+    let deadline = Date().addingTimeInterval(seconds)
+    while restoreRequested == 0, Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.2)
     }
-    signal(SIGTERM) { _ in restoreRequested = 1 }
 }
 
 /// ループを抜けた後の後始末。
@@ -185,8 +193,10 @@ case "boost":
         let deadline = Date().addingTimeInterval(minutes * 60)
         while Date() < deadline, restoreRequested == 0 {
             // thermalmonitord に奪い返されても再設定し続ける
-            for f in fc.readFans() where f.mode != 1 { try? fc.setTarget(fan: f.index, rpm: f.maxRPM ?? 6000) }
-            Thread.sleep(forTimeInterval: 2)
+            for f in fc.readFans() where f.mode != 1 && restoreRequested == 0 {
+                try? fc.setTarget(fan: f.index, rpm: f.maxRPM ?? 6000)
+            }
+            sleepUnlessStopped(2)
         }
         finishBackgroundControl(fc)
     } catch { finishBackgroundControl(fc); fail("\(error)") }
@@ -234,7 +244,7 @@ case "curve":
             print(String(format: "%@  %5.1f°  → %@", ISO8601DateFormatter().string(from: Date()) as NSString, temp,
                          fc.readFans().map { "\(Int($0.actualRPM))rpm" }.joined(separator: " / ") as NSString))
         }
-        Thread.sleep(forTimeInterval: 3)
+        sleepUnlessStopped(3)
     }
     finishBackgroundControl(fc)
     #else

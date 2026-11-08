@@ -66,5 +66,6 @@ echo
 echo "✅ 完成: $APP"
 echo "   起動:            open \"$APP\""
 echo "   「開発元を確認できない」と出たら: システム設定 → プライバシーとセキュリティ → 「このまま開く」"
-echo "   /Applications へ: cp -R \"$APP\" /Applications/"
+echo "   /Applications へ: rm -rf /Applications/ThermalPilot.app && cp -R \"$APP\" /Applications/"
+echo "                    (既にある .app に cp -R すると入れ子になって壊れるので、先に消してください)"
 echo "   CLI も入れる:     sudo ./scripts/install-cli.sh"
