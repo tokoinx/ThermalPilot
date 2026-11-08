@@ -73,6 +73,11 @@ final class ThermalMonitor {
     }
 
     private func apply(_ snap: ThermalSnapshot) {
+        if snapshot.timestamp == .distantPast {
+            NSLog("[ThermalPilot] 初回スナップショット: %@ / センサー %ld 個 / ファン %ld 個 / 代表温度 %@ / 源 %@",
+                  snap.level.label, snap.sensors.count, snap.fans.count,
+                  ThermalFormat.celsius(snap.representative), snap.sourceDescription)
+        }
         snapshot = snap
         if let rep = snap.representative {
             history.append(rep)
