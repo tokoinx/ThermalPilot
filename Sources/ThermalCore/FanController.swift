@@ -72,13 +72,33 @@ public enum FanControlError: Error, CustomStringConvertible {
 public enum BackgroundFanController {
     public static let pidFilePath = "/var/run/thermalctl.pid"
 
-    /// 実行中のコントローラの PID。ファイルが無い・プロセスが死んでいれば nil。
+    /// 実行中のコントローラの PID。ファイルが無い・プロセスが死んでいる・別のプログラムに PID が再利用されていれば nil。
     public static func runningPID() -> pid_t? {
         guard let text = try? String(contentsOfFile: pidFilePath, encoding: .utf8),
               let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 0 else { return nil }
         // kill(pid, 0): 存在すれば 0。root のプロセスに対して一般ユーザーが呼ぶと EPERM だが、それも「存在する」証拠。
-        if kill(pid, 0) == 0 || errno == EPERM { return pid }
-        return nil
+        guard kill(pid, 0) == 0 || errno == EPERM else { return nil }
+        // PID の再利用対策: 本当に thermalctl かをコマンド名で確認する
+        guard commandName(of: pid).hasSuffix("thermalctl") else { return nil }
+        return pid
+    }
+
+    /// `ps -o comm= -p PID` でコマンド名を得る (取れなければ空文字)。
+    static func commandName(of pid: pid_t) -> String {
+        #if os(macOS)
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/ps")
+        task.arguments = ["-o", "comm=", "-p", String(pid)]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        guard (try? task.run()) != nil else { return "" }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        return (String(data: data, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        #else
+        return ""
+        #endif
     }
 
     public static var isRunning: Bool { runningPID() != nil }
