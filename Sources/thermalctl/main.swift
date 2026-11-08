@@ -15,7 +15,7 @@
 import Foundation
 import ThermalCore
 
-let args = Array(CommandLine.arguments.dropFirst())
+var args = Array(CommandLine.arguments.dropFirst())
 let command = args.first ?? "status"
 let wantsJSON = args.contains("--json")
 
@@ -34,6 +34,26 @@ func printJSON<T: Encodable>(_ value: T) {
 func fail(_ message: String, code: Int32 = 1) -> Never {
     FileHandle.standardError.write((message + "\n").data(using: .utf8)!)
     exit(code)
+}
+
+// --daemonize: 二重 fork で完全に独立したプロセスになる。
+// osascript の「管理者権限」トランポリンは, 配下でバックグラウンド起動したプロセスを
+// 終了時に道連れに殺す。setsid + 二重 fork で新しいセッションの長となり launchd に
+// 里親付けされることで, アプリ側から起動しても boost/curve が生き残れるようにする。
+// ThermalEngine (IOKit 接続) はこの後で生成するので, fork はまだシングルスレッドの状態で行われる。
+if args.contains("--daemonize") {
+    args.removeAll { $0 == "--daemonize" }
+    let pid1 = fork()
+    if pid1 < 0 { fail("fork に失敗しました") }
+    if pid1 > 0 { exit(0) }            // 元の親 (トランポリン配下) は即終了 → 認証ダイアログが閉じる
+    setsid()                            // 新しいセッションの長になり制御端末から切り離す
+    let pid2 = fork()
+    if pid2 < 0 { _exit(1) }
+    if pid2 > 0 { _exit(0) }            // 中間の子も終了 → 孫だけが残り launchd 配下へ
+    // 孫プロセスが以降を担当。親の標準入出力は閉じられるため /dev/null へ付け替える。
+    freopen("/dev/null", "r", stdin)
+    freopen("/dev/null", "w", stdout)
+    freopen("/dev/null", "w", stderr)
 }
 
 let engine = ThermalEngine()

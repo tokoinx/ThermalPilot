@@ -66,10 +66,10 @@ enum CoolDownActions {
     /// `detached: true` なら nohup + & でバックグラウンド起動し、すぐ戻る (boost / curve のような長時間ループ用)。
     static func runThermalctl(_ args: [String], detached: Bool = false) async -> Bool {
         guard let path = thermalctlPath() else { return false }
-        var cmd = ([path] + args).map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
-        if detached {
-            cmd = "nohup \(cmd) >/dev/null 2>&1 &"
-        }
+        // detached の時は thermalctl 自身が --daemonize で二重 fork して独立する。
+        // nohup + & では osascript の管理者権限トランポリンに道連れで殺されるため使わない。
+        let allArgs = detached ? args + ["--daemonize"] : args
+        let cmd = ([path] + allArgs).map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
         let escaped = cmd.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let script = "do shell script \"\(escaped)\" with administrator privileges"
         return await runAppleScript(script)
