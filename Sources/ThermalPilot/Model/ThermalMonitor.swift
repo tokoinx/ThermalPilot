@@ -139,7 +139,11 @@ final class ThermalMonitor {
     func boostFans(minutes: Int = 10) {
         Task {
             // boost は最大 N 分のループなので、バックグラウンドで起動してすぐ戻る
-            let ok = await CoolDownActions.runThermalctl(["boost", "--minutes", String(minutes)], detached: true)
+            // --parent: このアプリが終了したら boost も自動で終わる
+            let ok = await CoolDownActions.runThermalctl(
+                ["boost", "--minutes", String(minutes), "--parent", String(ProcessInfo.processInfo.processIdentifier)],
+                detached: true
+            )
             lastError = ok ? nil : "thermalctl boost の起動に失敗しました (認証がキャンセルされた可能性)"
             // 起動直後は PID ファイルがまだ無いことがあるので少し待ってから確認
             try? await Task.sleep(for: .seconds(1.5))

@@ -39,6 +39,14 @@ func fail(_ message: String, code: Int32 = 1) -> Never {
 let engine = ThermalEngine()
 /// Ctrl-C / SIGTERM を受けたら 1 になる (シグナルハンドラから触るのでグローバル)。
 var restoreRequested: Int32 = 0
+/// `--parent PID`: この PID (ThermalPilot.app) が消えたら boost / curve を終了して自動に戻す。
+/// アプリを終了したのにファンが全開のまま、という事故を防ぐ。
+let parentPID: pid_t? = flagValue("--parent").flatMap { pid_t($0) }
+
+func parentIsGone() -> Bool {
+    guard let parentPID else { return false }
+    return kill(parentPID, 0) != 0 && errno == ESRCH
+}
 
 func bar(_ fraction: Double, width: Int = 20) -> String {
     let filled = Int((min(1, max(0, fraction)) * Double(width)).rounded())
@@ -100,10 +108,15 @@ func installRestoreOnExit(_ fc: FanController) {
     signal(SIGTERM) { _ in restoreRequested = 1; alarm(8) }
 }
 
-/// restoreRequested を見ながら細かく眠る (停止要求に 0.2 秒以内で反応するため)。
+/// restoreRequested と親アプリの生存を見ながら細かく眠る (停止要求に 0.2 秒以内で反応するため)。
 func sleepUnlessStopped(_ seconds: Double) {
     let deadline = Date().addingTimeInterval(seconds)
     while restoreRequested == 0, Date() < deadline {
+        if parentIsGone() {
+            print("ThermalPilot.app が終了したので自動制御に戻します。")
+            restoreRequested = 1
+            return
+        }
         Thread.sleep(forTimeInterval: 0.2)
     }
 }
@@ -261,9 +274,9 @@ case "-h", "--help", "help":
       thermalctl watch [--interval N]
       thermalctl keys [PREFIX]
       sudo thermalctl set FAN RPM
-      sudo thermalctl boost [--minutes N]
+      sudo thermalctl boost [--minutes N] [--parent PID]   (--parent: その PID が消えたら自動へ戻して終了)
       sudo thermalctl auto [FAN]
-      sudo thermalctl curve
+      sudo thermalctl curve [--parent PID]
     """)
 
 default:
