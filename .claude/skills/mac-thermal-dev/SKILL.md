@@ -51,7 +51,10 @@ description: Mac の温度・ファン・SMC・IOHID センサーを扱う Swift
 - thermalmonitord は数秒で制御を取り戻す → 継続制御はループで再設定し続ける (`thermalctl curve`)。
 - スリープ復帰で `Ftst` はリセット。
 - 0 rpm まで落とせるのは OS だけ。十分冷えたら auto に返す。
-- **boost / curve は長時間ループ**。`auto` は必ず先に `BackgroundFanController.stop()` で止める (止めないと 2 秒後に再設定されて「戻らない」バグになる)。アプリからは `thermalctl --daemonize` (二重 fork + setsid) で起動する。`do shell script ... with administrator privileges` 配下の `nohup ... &` は認証トランポリンに道連れで殺されるため使わない (「ボタンを押しても何も起きない」の原因)。
+- **Linux でビルドが通っても macOS で通るとは限らない**。例: `fork()` は Swift on Darwin では unavailable (Glibc では使える)。この CLI は Linux CI でビルドされるが、Darwin 固有の可否はユーザーの Mac でしか確認できない。新しい API を足す時は、既に Mac でビルド済みの API を優先し、確認できていないことを明言する。
+- **置換スクリプトは一致件数を検証する**。Python の `str.replace` は不一致でも黙って何もしない。過去に「反映した」と報告した変更が実際には入っていなかった。
+- 診断ログ: thermalctl は root 時のみ `/var/log/thermalctl.log`、アプリは `~/Library/Logs/ThermalPilot.log`。原因が推測の段階では修正を主張せず、まずログで確認する。
+- **boost / curve は長時間ループ**。`auto` は必ず先に `BackgroundFanController.stop()` で止める (止めないと 2 秒後に再設定されて「戻らない」バグになる)。アプリからは `nohup ... &` で detached 起動し、`do shell script` を 10 分ブロックさせない。
 - M2 / M3 は未検証。実機で `thermalctl keys F` を見てから書く。
 
 ## 権限と配布

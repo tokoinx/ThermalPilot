@@ -140,14 +140,21 @@ final class ThermalMonitor {
         Task {
             // boost は最大 N 分のループなので、バックグラウンドで起動してすぐ戻る
             // --parent: このアプリが終了したら boost も自動で終わる
+            AppLog.write("「ファン全開」ボタン: アプリ PID \(ProcessInfo.processInfo.processIdentifier)")
             let ok = await CoolDownActions.runThermalctl(
                 ["boost", "--minutes", String(minutes), "--parent", String(ProcessInfo.processInfo.processIdentifier)],
                 detached: true
             )
-            lastError = ok ? nil : "thermalctl boost の起動に失敗しました (認証がキャンセルされた可能性)"
+            if !ok {
+                lastError = "ファン全開を起動できませんでした。理由は ~/Library/Logs/ThermalPilot.log にあります"
+                refreshNow()
+                return
+            }
             // 起動直後は PID ファイルがまだ無いことがあるので少し待ってから確認
-            try? await Task.sleep(for: .seconds(1.5))
+            try? await Task.sleep(for: .seconds(2.5))
             isFanBoostActive = BackgroundFanController.isAnyControllerRunning
+            AppLog.write("2.5 秒後の確認: ファン制御プロセス \(isFanBoostActive ? "あり" : "なし")")
+            lastError = isFanBoostActive ? nil : "ファン全開を起動しましたが、動作を確認できません。/var/log/thermalctl.log を見てください"
             refreshNow()
         }
     }
@@ -155,9 +162,11 @@ final class ThermalMonitor {
     func restoreFansAuto() {
         Task {
             // thermalctl auto は、裏で動いている boost / curve を止めてから自動へ戻す
+            AppLog.write("「自動に戻す」ボタン")
             let ok = await CoolDownActions.runThermalctl(["auto"])
-            lastError = ok ? nil : "thermalctl auto に失敗しました (認証がキャンセルされた可能性)"
+            lastError = ok ? nil : "自動に戻せませんでした。理由は ~/Library/Logs/ThermalPilot.log にあります"
             isFanBoostActive = BackgroundFanController.isAnyControllerRunning
+            AppLog.write("「自動に戻す」後: ファン制御プロセス \(isFanBoostActive ? "あり" : "なし")")
             refreshNow()
         }
     }

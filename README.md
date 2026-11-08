@@ -66,8 +66,9 @@ sudo thermalctl auto             # 自動制御に戻す
 
 アプリには `thermalctl` が同梱されているので、ファン付きの Mac ではパネルに **「ファン全開 (10 分)」「自動に戻す」** ボタンが出ます。
 
-- 「ファン全開」は `thermalctl boost --daemonize` をバックグラウンドで起動し、10 分間 (または「自動に戻す」まで) 全開を維持します。実行中はパネルに「ブースト中」と出ます。**アプリを終了すると boost も自動で終わり、ファンは自動制御に戻ります** (`--parent` でアプリの PID を監視)。
-- `--daemonize` は二重 fork でプロセスを完全に独立させます。これが無いと、管理者認証 (osascript) 経由で起動したプロセスが認証の終了時に道連れで殺され、「ボタンを押しても何も起きない」状態になります。
+> **既知の問題 (調査中)**: 現在、アプリの「ファン全開」ボタンを押してもファンが回りません。ターミナルの `sudo thermalctl boost` と `sudo thermalctl set` は Apple M1 で動作を確認済みです。原因の特定のため、ボタン操作の経過をログに記録しています (下の「診断ログ」)。
+
+- 「ファン全開」は `thermalctl boost` をバックグラウンドで起動し、10 分間 (または「自動に戻す」まで) 全開を維持します。実行中はパネルに「ブースト中」と出ます。**アプリを終了すると boost も自動で終わり、ファンは自動制御に戻ります** (`--parent` でアプリの PID を監視)。
 - 「自動に戻す」は、裏で動いている boost / curve を止めてから自動制御へ戻します。止めずに戻そうとしても 2 秒後に再設定されるため、必ずこの順番で処理しています。
 - boost / curve は PID を `/var/run/thermalctl.pid` に記録します。ターミナルから `sudo thermalctl auto` でも同じように停止できます。
 
@@ -79,6 +80,7 @@ sudo thermalctl auto             # 自動制御に戻す
 | 「開発元を確認できないため開けません」 | ad-hoc 署名のため。右クリック →「開く」、または システム設定 → プライバシーとセキュリティ →「このまま開く」。Xcode にサインインしていれば無料の "Apple Development" 証明書が自動で使われ、この警告は出ない |
 | 温度が「未検出」 | 仮想マシン、または IOHID が塞がれた環境。`thermalctl keys T` で SMC 側のキーがあるか確認 |
 | ファン欄が出ない | ファンレス機 (MacBook Air) か SMC 未検出。`thermalctl fans` で確認 |
+| ボタンを押しても何も起きない | 診断ログを確認してください。アプリ側は `~/Library/Logs/ThermalPilot.log` (AppleScript の成否と理由)、thermalctl 側は `/var/log/thermalctl.log` (起動・受信シグナル・停止理由)。どちらも `cat` で読めます |
 | 更新したのに挙動が変わらない | `open` は同じ ID のアプリが起動中だと **古い方を前面に出すだけ** で新しいビルドを起動しません。build-app.sh が起動中のアプリを自動終了するようにしたので、ビルド後に `open` し直してください。新版は別の場所にある旧版を起動時に終了させます |
 | `open /Applications/ThermalPilot.app` が「存在しない」と言う | 既にある .app の上に `cp -R` すると入れ子にコピーされて壊れます。`rm -rf /Applications/ThermalPilot.app` してからコピーし直してください |
 | 「自動に戻す」を押しても戻らない | v0.1.0 の既知バグ (boost ループが生き残っていた)。最新版では `auto` が先に boost を止めます (SIGTERM → 8 秒で SIGALRM 番犬 → SIGKILL)。古い版が動いたままなら `sudo pkill -9 -f thermalctl` |

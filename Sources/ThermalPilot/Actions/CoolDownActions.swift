@@ -66,12 +66,13 @@ enum CoolDownActions {
     /// `detached: true` なら nohup + & でバックグラウンド起動し、すぐ戻る (boost / curve のような長時間ループ用)。
     static func runThermalctl(_ args: [String], detached: Bool = false) async -> Bool {
         guard let path = thermalctlPath() else { return false }
-        // detached の時は thermalctl 自身が --daemonize で二重 fork して独立する。
-        // nohup + & では osascript の管理者権限トランポリンに道連れで殺されるため使わない。
-        let allArgs = detached ? args + ["--daemonize"] : args
-        let cmd = ([path] + allArgs).map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
+        var cmd = ([path] + args).map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
+        if detached {
+            cmd = "nohup \(cmd) >/dev/null 2>&1 &"
+        }
         let escaped = cmd.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let script = "do shell script \"\(escaped)\" with administrator privileges"
+        AppLog.write("thermalctl 実行: \(script)")
         return await runAppleScript(script)
     }
 
@@ -82,6 +83,14 @@ enum CoolDownActions {
             DispatchQueue.global(qos: .userInitiated).async {
                 var error: NSDictionary?
                 let ok = NSAppleScript(source: source)?.executeAndReturnError(&error) != nil
+                if let error {
+                    // 失敗の理由 (認証キャンセル・構文エラーなど) を握りつぶさず記録する
+                    let message = error["NSAppleScriptErrorMessage"] as? String ?? "\(error)"
+                    let number = error["NSAppleScriptErrorNumber"] as? Int ?? 0
+                    AppLog.write("AppleScript 失敗: \(message) 番号 \(number)")
+                } else {
+                    AppLog.write("AppleScript 成功")
+                }
                 cont.resume(returning: ok && error == nil)
             }
         }
