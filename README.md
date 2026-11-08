@@ -19,7 +19,7 @@ Apple Silicon (M1〜M5) と Intel Mac の両対応。macOS 14 Sonoma 以降。
 | 「熱の犯人」= CPU 上位プロセスの表示と終了 | `ps -Arcxo pid,pcpu,comm` + `kill` | 不要 (他ユーザーのプロセスは不可) |
 | 熱くなったら通知 | UserNotifications。ヒステリシス付きで通知のバタつきを防止 | 不要 |
 | 低電力モードの切替 (自動オンも可) | `pmset -a lowpowermode` を管理者認証ダイアログ経由で実行 | 認証 |
-| ファン全開 / 自動復帰 / 温度追従カーブ | `thermalctl` (同梱 CLI) を管理者認証で実行。Apple Silicon の `Ftst` アンロック対応 | **root** |
+| ファン全開 / 自動復帰 / 温度追従カーブ | 同梱の `thermalctl` を管理者認証で実行。アプリから全開にした場合は、パスワード無しで自動に戻せる。Apple Silicon の `Ftst` アンロック対応 | **root** |
 | ターミナルから `thermalctl status --json` | 同じエンジンを CLI で | 不要 |
 
 ### 「温度管理」の考え方
@@ -66,7 +66,7 @@ sudo thermalctl auto             # 自動制御に戻す
 
 アプリには `thermalctl` が同梱されているので、ファン付きの Mac ではパネルに **「ファン全開 (10 分)」「自動に戻す」** ボタンが出ます。
 
-> **既知の問題 (動作確認待ち)**: アプリの「ファン全開」ボタンでファンが回らない不具合がありました。実機ログで、バックグラウンド起動 (`nohup … &`) では thermalctl が一度も起動していないと分かったため、最初の版で動いていた前面実行に戻しました。この修正の Mac での動作確認はまだです。ターミナルの `sudo thermalctl boost` と `set` は Apple M1 で動作を確認済みです。
+> **動作確認 (2026-11-08、Apple M1)**: 「ファン全開」でファンが全開になり、「自動に戻す」でパスワード無しに止まることを確認しました。以前の版は全開をバックグラウンドで起動していたため thermalctl が起動せず、ボタンを押しても何も起きませんでした。現在は管理者認証の前面で実行しています。
 
 - 「ファン全開」は管理者認証のあと `thermalctl boost` を実行し、10 分間 (または「自動に戻す」まで) 全開を維持します。実行中はパネルに「ブースト中」と出ます。**アプリを終了すると boost も自動で終わり、ファンは自動制御に戻ります** (`--parent` でアプリの PID を監視)。
 - 「自動に戻す」は、アプリが起動した boost なら **パスワード無し** で止めます。アプリが停止ファイル `~/Library/Application Support/ThermalPilot/boost.stop` を置き、root の boost が 0.1 秒ごとにその有無を確かめて、自動制御へ戻して終了します。root 側はこのファイルを確かめるだけで、書き込みも削除もしません。3 秒以内に止まらない時や、ターミナルから起動した boost の時は、従来どおり管理者権限の `thermalctl auto` で止めます。
@@ -84,7 +84,7 @@ sudo thermalctl auto             # 自動制御に戻す
 | ボタンを押しても何も起きない | 診断ログを確認してください。アプリ側は `~/Library/Logs/ThermalPilot.log` (AppleScript の成否と理由)、thermalctl 側は `/var/log/thermalctl.log` (起動・受信シグナル・停止理由)。どちらも `cat` で読めます |
 | 更新したのに挙動が変わらない | `open` は同じ ID のアプリが起動中だと **古い方を前面に出すだけ** で新しいビルドを起動しません。build-app.sh が起動中のアプリを自動終了するようにしたので、ビルド後に `open` し直してください。新版は別の場所にある旧版を起動時に終了させます |
 | `open /Applications/ThermalPilot.app` が「存在しない」と言う | 既にある .app の上に `cp -R` すると入れ子にコピーされて壊れます。`rm -rf /Applications/ThermalPilot.app` してからコピーし直してください |
-| 「自動に戻す」を押しても戻らない | v0.1.0 の既知バグ (boost ループが生き残っていた)。最新版では `auto` が先に boost を止めます (SIGTERM → 8 秒で SIGALRM 番犬 → SIGKILL)。古い版が動いたままなら `sudo pkill -9 -f thermalctl` |
+| 「自動に戻す」を押しても戻らない | 以前の版の不具合で、全開のループが残り続けていました。現在は、アプリから全開にした場合は停止ファイルで、それ以外は `sudo thermalctl auto` で止めます。古い版の thermalctl が動いたままなら、`sudo pkill -9 -f thermalctl` の後に `sudo thermalctl auto` を実行してください |
 
 ## 初回起動時に出るもの
 
@@ -126,17 +126,24 @@ docs/RESEARCH.md        GitHub 調査レポート (先行プロジェクト・Sk
 
 ## 検証状況
 
+2026-11-08 時点。実機は Apple M1 の Mac です。確認していない項目は「未確認」としています。
+
 | 対象 | 状態 |
 |---|---|
-| `ThermalCore` (判定ロジック・SMC 型変換・センサー命名・ps パーサ・ファンカーブ) | Linux + Swift 6.1 で **ビルドとユニットテスト 14 件が通過** |
-| `thermalctl` | Linux でビルド・起動を確認 (IOKit の無い環境ではフォールバック表示) |
-| `ThermalPilot.app` (SwiftUI / AppKit / IOKit の実体) | **macOS 実機では未コンパイル**。Linux の Claude Code セッションで実装したため |
+| ビルド、アプリの起動、メニューバーの表示 | Apple M1 で確認済み |
+| ユニットテスト | Apple M1 で 14 件通過。その後に追加した 1 件を含む 15 件は Linux + Swift 6.1 で通過 |
+| 温度の読み取り (`thermalctl sensors`、IOHID) | Apple M1 で確認済み |
+| ファンの設定 (`sudo thermalctl set` / `boost`) | Apple M1 で確認済み |
+| アプリの「ファン全開」と、パスワード無しの「自動に戻す」 | Apple M1 で確認済み |
+| アプリ終了時に全開を自動で止める (`--parent`) | 未確認 |
+| 温度追従カーブ (`sudo thermalctl curve`)、低電力モードの切替、通知 | 未確認 |
+| Intel Mac、M2 / M3 / M4 / M5 | 未確認 |
 
-macOS 実機では次の順で確認してください:
+自分の Mac で確かめる手順:
 
 ```bash
 swift build                      # アプリ本体を含む全ターゲット
-swift test                       # 14 件 + 実機で増やす分
+swift test                       # ユニットテスト 15 件
 swift run thermalctl sensors     # IOHID / SMC の生の値が取れるか
 ./scripts/build-app.sh && open dist/ThermalPilot.app
 ```

@@ -19,7 +19,7 @@ Supports Apple Silicon (M1 to M5) and Intel Macs. Requires macOS 14 Sonoma or la
 | "Heat suspects": top CPU processes, terminate in place | `ps -Arcxo pid,pcpu,comm` + `kill` | no (own processes only) |
 | Notification when it gets hot | UserNotifications with hysteresis, so thresholds do not flap | no |
 | Low Power Mode toggle (optional auto-on at critical) | `pmset -a lowpowermode` through an admin authentication dialog | admin |
-| Fan boost / restore auto / temperature-following curve | Bundled `thermalctl` CLI run with admin authentication. Handles the Apple Silicon `Ftst` unlock | **root** |
+| Fan boost / restore auto / temperature-following curve | Bundled `thermalctl` CLI run with admin authentication. A boost started from the app can be restored to auto without a password. Handles the Apple Silicon `Ftst` unlock | **root** |
 | `thermalctl status --json` from the terminal | Same engine, as a CLI | no |
 
 ### Philosophy
@@ -71,8 +71,8 @@ sudo thermalctl auto             # back to automatic control
 | "cannot be opened because the developer cannot be verified" | Ad-hoc signature. Right-click → Open, or System Settings → Privacy & Security → Open Anyway. If Xcode is signed in, the free "Apple Development" certificate is picked up automatically and the warning disappears |
 | Temperatures show "not detected" | Virtual machine, or IOHID blocked. Check `thermalctl keys T` for SMC-side keys |
 | No fan section | Fanless Mac (MacBook Air) or SMC not found. Check with `thermalctl fans` |
-| A button does nothing | Check the diagnostic logs: the app writes `~/Library/Logs/ThermalPilot.log` (AppleScript result and error), thermalctl writes `/var/log/thermalctl.log` (start, received signals, stop reason). **Known issue, fix awaiting verification:** the app's "Fan boost" button did not spin the fans. Logs showed that the background launch (`nohup … &`) never started thermalctl, so the app now runs boost in the foreground, as the first version did. This fix is not yet verified on a Mac. `sudo thermalctl boost` / `set` from the terminal work (verified on Apple M1) |
-| "Restore auto" does nothing after "Fan boost" | Known bug in v0.1.0 (the boost loop kept re-applying). `auto` now stops boost/curve first via the PID file at `/var/run/thermalctl.pid`. If an old boost is still running: `sudo pkill -f "thermalctl boost"` |
+| A button does nothing | Check the diagnostic logs: the app writes `~/Library/Logs/ThermalPilot.log` (AppleScript result and error), thermalctl writes `/var/log/thermalctl.log` (start, received signals, stop reason). |
+| "Restore auto" does nothing after "Fan boost" | A bug in earlier versions: the boost loop kept re-applying. Now a boost started from the app is stopped through a stop file, and anything else through `sudo thermalctl auto`. If an old thermalctl is still running, run `sudo pkill -9 -f thermalctl`, then `sudo thermalctl auto` |
 
 ## Design notes
 
@@ -105,6 +105,21 @@ docs/RESEARCH.md        survey of prior projects, Claude Skills and SMC keys (Ja
 - On Apple Silicon, `thermalmonitord` reclaims fan control within seconds. `boost` / `curve` keep re-applying in a loop, but sleep resets `Ftst`, so re-run after wake. M2 / M3 are untested (agoodkind's research covers M1 / M4 / M5).
 - IOHIDEventSystemClient is a **private API**, so Mac App Store distribution is not possible. If a future macOS changes it, the app falls back to SMC reads.
 - Forcing fans too low **can damage hardware**. `thermalctl` clamps to the hardware-reported min/max, but use at your own risk.
+
+## Verification
+
+As of 2026-11-08, on an Apple M1 Mac. Items not tested are marked "not verified".
+
+| Item | Status |
+|---|---|
+| Build, app launch, menu bar display | Verified on Apple M1 |
+| Unit tests | 14 passed on Apple M1. All 15, including one added later, pass on Linux with Swift 6.1 |
+| Temperature reading (`thermalctl sensors`, IOHID) | Verified on Apple M1 |
+| Fan control (`sudo thermalctl set` / `boost`) | Verified on Apple M1 |
+| App "Fan boost" and password-free "Restore auto" | Verified on Apple M1 |
+| Stopping the boost when the app quits (`--parent`) | Not verified |
+| Fan curve (`sudo thermalctl curve`), Low Power Mode toggle, notifications | Not verified |
+| Intel Macs, M2 / M3 / M4 / M5 | Not verified |
 
 ## License
 
