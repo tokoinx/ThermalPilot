@@ -42,6 +42,15 @@ var restoreRequested: Int32 = 0
 /// `--parent PID`: この PID (ThermalPilot.app) が消えたら boost / curve を終了して自動に戻す。
 /// アプリを終了したのにファンが全開のまま、という事故を防ぐ。
 let parentPID: pid_t? = flagValue("--parent").flatMap { pid_t($0) }
+/// `--stop-file PATH`: このファイルが現れたら boost / curve を終了して自動に戻す。
+/// 一般ユーザーのアプリは root の boost にシグナルを送れないため、パスワード無しで止める窓口にする。
+/// root 側は存在を確かめるだけで、このファイルを書いたり消したりはしない (作成と削除はアプリが行う)。
+let stopFilePath: String? = flagValue("--stop-file")
+
+func stopFileRequested() -> Bool {
+    guard let stopFilePath else { return false }
+    return FileManager.default.fileExists(atPath: stopFilePath)
+}
 
 func parentIsGone() -> Bool {
     guard let parentPID else { return false }
@@ -147,17 +156,22 @@ func installRestoreOnExit(_ fc: FanController) {
     signal(SIGTERM) { sig in receivedSignal = sig; restoreRequested = 1; alarm(8) }
 }
 
-/// restoreRequested と親アプリの生存を見ながら細かく眠る (停止要求に 0.2 秒以内で反応するため)。
+/// restoreRequested と親アプリの生存を見ながら細かく眠る (停止要求に 0.1 秒程度で反応するため)。
 func sleepUnlessStopped(_ seconds: Double) {
     let deadline = Date().addingTimeInterval(seconds)
     while restoreRequested == 0, Date() < deadline {
+        if stopFileRequested() {
+            stopReason = "アプリからの停止要求 (停止ファイル)"
+            restoreRequested = 1
+            return
+        }
         if parentIsGone() {
             print("ThermalPilot.app が終了したので自動制御に戻します。")
             stopReason = "親アプリ PID \(parentPID ?? 0) の終了を検知"
             restoreRequested = 1
             return
         }
-        Thread.sleep(forTimeInterval: 0.2)
+        Thread.sleep(forTimeInterval: 0.1)
     }
 }
 
@@ -167,6 +181,11 @@ func finishBackgroundControl(_ fc: FanController) {
         : receivedSignal != 0 ? "シグナル \(receivedSignal) を受信"
         : "時間切れ"
     diag("ループ終了: \(reason)")
+    // 回転を早く落とすため、手動のうちに目標を最小回転数へ下げてから自動に戻す (効果はアプリのログで実測)
+    for f in fc.readFans() where f.mode == 1 {
+        try? fc.setTarget(fan: f.index, rpm: f.minRPM ?? 0)
+    }
+    diag("目標を最小へ: \(fanSummary(fc.readFans()))")
     fc.restoreAutoAll()
     BackgroundFanController.unregister()
     diag("自動制御に戻した: \(fanSummary(fc.readFans()))")
@@ -252,7 +271,7 @@ case "boost":
     let fc = requireFans()
     let minutes = Double(flagValue("--minutes") ?? "10") ?? 10
     let fans = fc.readFans()
-    diag("boost 開始: 引数=\(CommandLine.arguments.dropFirst().joined(separator: " ")) euid=\(geteuid()) 親=\(parentPID.map(String.init) ?? "なし") 開始前: \(fanSummary(fans))")
+    diag("boost 開始: 引数=\(CommandLine.arguments.dropFirst().joined(separator: " ")) euid=\(geteuid()) 親=\(parentPID.map(String.init) ?? "なし") 停止ファイル既存=\(stopFileRequested()) 開始前: \(fanSummary(fans))")
     do {
         for f in fans { try fc.setTarget(fan: f.index, rpm: f.maxRPM ?? 6000) }
         print("全ファン最大。\(Int(minutes)) 分後に自動へ戻します (Ctrl-C でも戻ります)。")
@@ -341,7 +360,8 @@ case "-h", "--help", "help":
       thermalctl watch [--interval N]
       thermalctl keys [PREFIX]
       sudo thermalctl set FAN RPM
-      sudo thermalctl boost [--minutes N] [--parent PID]   (--parent: その PID が消えたら自動へ戻して終了)
+      sudo thermalctl boost [--minutes N] [--parent PID] [--stop-file PATH]
+          --parent: その PID が消えたら / --stop-file: そのファイルが現れたら、自動へ戻して終了
       sudo thermalctl auto [FAN]
       sudo thermalctl curve [--parent PID]
     """)

@@ -142,8 +142,11 @@ final class ThermalMonitor {
         let appPID = ProcessInfo.processInfo.processIdentifier
         AppLog.write("「ファン全開」ボタン: アプリ PID \(appPID)")
         // boost は認証後に前面で動き続ける。--parent: このアプリが終了したら boost も自動で終わる
+        // 前回の停止ファイルが残っていると起動直後に止まってしまうので、先に消しておく
+        CoolDownActions.clearBoostStopRequest()
         guard let process = CoolDownActions.launchThermalctlInForeground(
-            ["boost", "--minutes", String(minutes), "--parent", String(appPID)]
+            ["boost", "--minutes", String(minutes), "--parent", String(appPID),
+             "--stop-file", CoolDownActions.boostStopFilePath]
         ) else {
             lastError = "ファン全開を起動できませんでした。理由は ~/Library/Logs/ThermalPilot.log にあります"
             return
@@ -173,15 +176,69 @@ final class ThermalMonitor {
     }
 
     func restoreFansAuto() {
-        Task {
-            // thermalctl auto は、裏で動いている boost / curve を止めてから自動へ戻す
-            AppLog.write("「自動に戻す」ボタン")
-            let ok = await CoolDownActions.runThermalctl(["auto"])
-            lastError = ok ? nil : "自動に戻せませんでした。理由は ~/Library/Logs/ThermalPilot.log にあります"
-            isFanBoostActive = BackgroundFanController.isAnyControllerRunning
-            AppLog.write("「自動に戻す」後: ファン制御プロセス \(isFanBoostActive ? "あり" : "なし")")
-            if !isFanBoostActive { boostProcess = nil }
-            refreshNow()
+        AppLog.write("「自動に戻す」ボタン")
+        let pressedAt = Date()
+        Self.recordSpinDown(from: pressedAt)
+
+        // このアプリが起動した boost なら、停止ファイルで止める (パスワード不要、0.1 秒程度で反応)
+        if let process = boostProcess, process.isRunning {
+            CoolDownActions.requestBoostStop()
+            Task {
+                for _ in 0..<30 {   // 最大 3 秒待つ
+                    try? await Task.sleep(for: .milliseconds(100))
+                    if !process.isRunning {
+                        CoolDownActions.clearBoostStopRequest()
+                        boostProcess = nil
+                        isFanBoostActive = false
+                        lastError = nil
+                        AppLog.write(String(format: "停止ファイルで boost が終了: %.2f 秒", Date().timeIntervalSince(pressedAt)))
+                        refreshNow()
+                        return
+                    }
+                }
+                // 3 秒で止まらなければ、従来どおり管理者権限で止める
+                CoolDownActions.clearBoostStopRequest()
+                AppLog.write("3 秒以内に boost が終了しないため、管理者権限で止めます")
+                await restoreFansAutoWithAdmin()
+            }
+            return
+        }
+        // ターミナルから起動した boost や、手動のまま残ったファンは管理者権限で戻す
+        Task { await restoreFansAutoWithAdmin() }
+    }
+
+    /// thermalctl auto を管理者権限で実行する (裏で動いている boost / curve を止めてから自動へ戻す)。
+    private func restoreFansAutoWithAdmin() async {
+        let ok = await CoolDownActions.runThermalctl(["auto"])
+        lastError = ok ? nil : "自動に戻せませんでした。理由は ~/Library/Logs/ThermalPilot.log にあります"
+        isFanBoostActive = BackgroundFanController.isAnyControllerRunning
+        AppLog.write("「自動に戻す」後: ファン制御プロセス \(isFanBoostActive ? "あり" : "なし")")
+        if !isFanBoostActive { boostProcess = nil }
+        refreshNow()
+    }
+
+    /// 「自動に戻す」を押してからファンが止まるまでの回転数を、0.25 秒ごとにアプリのログへ記録する (最大 15 秒)。
+    /// 定期更新と競合しないよう、別の SMC 接続で読む。読み取りに root は不要。
+    private nonisolated static func recordSpinDown(from start: Date) {
+        Task.detached(priority: .utility) {
+            guard let smc = try? SMC() else {
+                AppLog.write("回転数の記録: SMC に接続できません")
+                return
+            }
+            let fans = FanController(smc: smc)
+            while Date().timeIntervalSince(start) < 15 {
+                let now = fans.readFans()
+                let elapsed = Date().timeIntervalSince(start)
+                let summary = now.map { "実\(Int($0.actualRPM)) 目標\(Int($0.targetRPM ?? -1)) \($0.modeLabel)" }
+                    .joined(separator: " / ")
+                AppLog.write(String(format: "回転数 +%.2f 秒: ", elapsed) + summary)
+                if let fastest = now.map(\.actualRPM).max(), fastest < 200 {
+                    AppLog.write(String(format: "ファン停止まで %.2f 秒", elapsed))
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            AppLog.write("15 秒以内に止まりきりませんでした")
         }
     }
 

@@ -110,6 +110,24 @@ enum CoolDownActions {
         return task
     }
 
+    // MARK: パスワード無しの停止 (停止ファイル)
+
+    /// 「ファン全開」で起動した boost に渡す停止ファイル。アプリ (一般ユーザー) が作成と削除を行い、
+    /// root の boost は 0.1 秒ごとに存在だけを確かめる。root にシグナルを送れないアプリが、
+    /// 管理者パスワード無しで boost を止めるための窓口。
+    static let boostStopFilePath = NSHomeDirectory() + "/Library/Application Support/ThermalPilot/boost.stop"
+
+    static func requestBoostStop() {
+        let directory = (boostStopFilePath as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        let created = FileManager.default.createFile(atPath: boostStopFilePath, contents: Data())
+        AppLog.write("停止ファイルを作成: \(created ? "成功" : "失敗")")
+    }
+
+    static func clearBoostStopRequest() {
+        try? FileManager.default.removeItem(atPath: boostStopFilePath)
+    }
+
     // MARK: ヘルパー
 
     private static func runAppleScript(_ source: String) async -> Bool {
