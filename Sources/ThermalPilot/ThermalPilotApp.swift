@@ -33,6 +33,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationService.shared.requestAuthorization()
         NSLog("[ThermalPilot] 起動完了。メニューバーに温度計アイコンを挿入します (bundle: %@)", Bundle.main.bundlePath)
 
+        // 別の場所にある古い版が動いていたら終了させる (open は同じ ID の起動中アプリを前面に出すだけなので、
+        // 旧版が残っていると「更新したのに直らない」事故になる)
+        let me = NSRunningApplication.current
+        for other in NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+        where other != me && other.bundleURL != me.bundleURL {
+            NSLog("[ThermalPilot] 別の場所の ThermalPilot (%@) を終了します", other.bundleURL?.path ?? "?")
+            other.terminate()
+        }
+
         // 2 秒後に status item が実際に存在するか確認してログに出す (ノッチ裏に隠れている時の切り分け用)
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             let items = NSApp.windows.filter { String(describing: type(of: $0)).contains("StatusBar") }

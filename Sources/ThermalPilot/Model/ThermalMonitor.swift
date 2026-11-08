@@ -69,7 +69,7 @@ final class ThermalMonitor {
         // センサー読み取りと ps はバックグラウンドで
         let snap = await Task.detached(priority: .utility) { engine.snapshot(processLimit: limit) }.value
         apply(snap)
-        isFanBoostActive = BackgroundFanController.isRunning
+        isFanBoostActive = BackgroundFanController.isAnyControllerRunning
         if snapshot.level >= .hot || lowPowerModeOn == nil {
             lowPowerModeOn = await CoolDownActions.isLowPowerModeOn()
         }
@@ -143,7 +143,7 @@ final class ThermalMonitor {
             lastError = ok ? nil : "thermalctl boost の起動に失敗しました (認証がキャンセルされた可能性)"
             // 起動直後は PID ファイルがまだ無いことがあるので少し待ってから確認
             try? await Task.sleep(for: .seconds(1.5))
-            isFanBoostActive = BackgroundFanController.isRunning
+            isFanBoostActive = BackgroundFanController.isAnyControllerRunning
             refreshNow()
         }
     }
@@ -153,7 +153,7 @@ final class ThermalMonitor {
             // thermalctl auto は、裏で動いている boost / curve を止めてから自動へ戻す
             let ok = await CoolDownActions.runThermalctl(["auto"])
             lastError = ok ? nil : "thermalctl auto に失敗しました (認証がキャンセルされた可能性)"
-            isFanBoostActive = BackgroundFanController.isRunning
+            isFanBoostActive = BackgroundFanController.isAnyControllerRunning
             refreshNow()
         }
     }

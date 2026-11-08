@@ -88,7 +88,7 @@ func requireFans() -> FanController {
 /// Ctrl-C / SIGTERM (= `thermalctl auto` からの停止要求) で自動へ戻す。PID ファイルも登録する。
 func installRestoreOnExit(_ fc: FanController) {
     // 先に動いている boost / curve があれば止める (二重起動で綱引きにならないように)
-    if BackgroundFanController.isRunning {
+    if BackgroundFanController.isRunning || !BackgroundFanController.orphanedControllerPIDs().isEmpty {
         print("既に動いているファン制御を停止します…")
         BackgroundFanController.stop()
     }
@@ -197,10 +197,12 @@ case "boost":
 case "auto":
     #if canImport(IOKit)
     let fc = requireFans()
-    // 裏で boost / curve が動いていたら、まずそれを止める (止めないと 2 秒後に再設定されて「戻らない」)
-    if let pid = BackgroundFanController.runningPID() {
-        print("実行中のファン制御 (PID \(pid)) を停止します…")
-        if !BackgroundFanController.stop() { print("警告: 停止を確認できませんでした。手動で kill \(pid) を試してください。") }
+    // 裏で boost / curve が動いていたら、まずそれを止める (止めないと 2 秒後に再設定されて「戻らない」)。
+    // PID ファイルを書かない古い版のループも pgrep で探して止める。
+    let running = Set(BackgroundFanController.orphanedControllerPIDs() + (BackgroundFanController.runningPID().map { [$0] } ?? []))
+    if !running.isEmpty {
+        print("実行中のファン制御 (PID \(running.sorted().map(String.init).joined(separator: ", "))) を停止します…")
+        if !BackgroundFanController.stop() { print("警告: 停止を確認できませんでした。sudo pkill -f 'thermalctl boost' を試してください。") }
     }
     if args.count >= 2, let fan = Int(args[1]) {
         do { try fc.restoreAuto(fan: fan); print("ファン\(fan + 1) を自動に戻しました") } catch { fail("\(error)") }

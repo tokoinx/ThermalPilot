@@ -94,20 +94,57 @@ public enum BackgroundFanController {
         }
     }
 
-    /// 実行中のコントローラに SIGTERM を送り、終了を待つ (最大 timeout 秒)。停止できたら true。
+    /// PID ファイルを書かない古い版や、ファイルが消えた後も生き残っている boost / curve を
+    /// プロセス一覧から探す (`pgrep -f`)。自分自身は除外。
+    public static func orphanedControllerPIDs() -> [pid_t] {
+        #if os(macOS)
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        task.arguments = ["-f", "thermalctl (boost|curve)"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        guard (try? task.run()) != nil else { return [] }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        let me = getpid()
+        return (String(data: data, encoding: .utf8) ?? "")
+            .split(separator: "\n")
+            .compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
+            .filter { $0 != me }
+        #else
+        return []
+        #endif
+    }
+
+    /// 実行中のコントローラ (PID ファイル登録分 + 迷子のプロセス) に SIGTERM を送り、終了を待つ。
+    /// 全部止まったら true。
     @discardableResult
     public static func stop(timeout: TimeInterval = 6) -> Bool {
-        guard let pid = runningPID() else { return true }
-        kill(pid, SIGTERM)
+        var targets = Set<pid_t>(orphanedControllerPIDs())
+        if let pid = runningPID() { targets.insert(pid) }
+        guard !targets.isEmpty else { return true }
+
+        for pid in targets { kill(pid, SIGTERM) }
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if kill(pid, 0) != 0 && errno == ESRCH {
+            let alive = targets.filter { kill($0, 0) == 0 || errno == EPERM }
+            if alive.isEmpty {
                 try? FileManager.default.removeItem(atPath: pidFilePath)
                 return true
             }
             Thread.sleep(forTimeInterval: 0.2)
         }
-        return false
+        // 粘るものは SIGKILL (root なら通る)
+        for pid in targets where kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+        Thread.sleep(forTimeInterval: 0.3)
+        try? FileManager.default.removeItem(atPath: pidFilePath)
+        return targets.allSatisfy { kill($0, 0) != 0 && errno == ESRCH }
+    }
+
+    /// アプリ側の「ブースト中」判定: PID ファイル、または迷子プロセスのどちらかがあれば true。
+    public static var isAnyControllerRunning: Bool {
+        isRunning || !orphanedControllerPIDs().isEmpty
     }
 }
 

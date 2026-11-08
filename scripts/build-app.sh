@@ -27,6 +27,14 @@ if [[ -z "${SIGN_IDENTITY:-}" ]]; then
   SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 fi
 
+# 起動中の ThermalPilot があれば終了する。`open` は同じ ID の起動中アプリを前面に出すだけで
+# 新しいビルドを起動しないため、旧版が残ると「更新したのに直らない」事故になる。
+if pgrep -x ThermalPilot >/dev/null 2>&1; then
+  echo "▶ 起動中の ThermalPilot を終了します (ビルド後に open で起動し直してください)"
+  osascript -e 'tell application "ThermalPilot" to quit' >/dev/null 2>&1 || pkill -x ThermalPilot || true
+  sleep 1
+fi
+
 echo "▶ swift build -c release"
 swift build -c release --product ThermalPilot
 swift build -c release --product thermalctl
