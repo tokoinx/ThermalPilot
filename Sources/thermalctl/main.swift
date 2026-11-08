@@ -187,8 +187,15 @@ case "set":
     let fc = requireFans()
     do {
         try fc.setTarget(fan: fan, rpm: rpm)
-        print("ファン\(fan + 1) を \(Int(rpm)) rpm に設定しました (手動モード)。戻すには: sudo thermalctl auto \(fan)")
-        print("注意: thermalmonitord が数秒で制御を取り戻す機種があります。継続制御には `curve` を使ってください。")
+        // 書き込みが効いたか読み返す (SMC は書き込み成功を返しても thermalmonitord が即座に上書きすることがある)
+        Thread.sleep(forTimeInterval: 0.5)
+        if let after = fc.readFans().first(where: { $0.index == fan }) {
+            print("ファン\(fan + 1): 設定後 目標 \(ThermalFormat.rpm(after.targetRPM)) / 実 \(ThermalFormat.rpm(after.actualRPM)) / \(after.modeLabel)")
+            if (after.targetRPM ?? 0) < rpm * 0.9 {
+                print("⚠️ 目標 RPM が反映されていません。この機種/OS では F\(fan)Tg への書き込みが thermalmonitord に拒否されている可能性があります。")
+            }
+        }
+        print("戻すには: sudo thermalctl auto \(fan)")
     } catch { fail("\(error)") }
     #else
     fail("macOS 専用")
@@ -202,13 +209,19 @@ case "boost":
     do {
         for f in fans { try fc.setTarget(fan: f.index, rpm: f.maxRPM ?? 6000) }
         print("全ファン最大。\(Int(minutes)) 分後に自動へ戻します (Ctrl-C でも戻ります)。")
+        Thread.sleep(forTimeInterval: 0.5)
+        for f in fc.readFans() {
+            print("  ファン\(f.index + 1): 目標 \(ThermalFormat.rpm(f.targetRPM)) / 実 \(ThermalFormat.rpm(f.actualRPM)) / \(f.modeLabel)")
+        }
         installRestoreOnExit(fc)
         let deadline = Date().addingTimeInterval(minutes * 60)
         while Date() < deadline, restoreRequested == 0 {
             // thermalmonitord に奪い返されても再設定し続ける
-            for f in fc.readFans() where f.mode != 1 && restoreRequested == 0 {
+            let now = fc.readFans()
+            for f in now where f.mode != 1 && restoreRequested == 0 {
                 try? fc.setTarget(fan: f.index, rpm: f.maxRPM ?? 6000)
             }
+            print("  " + now.map { "ファン\($0.index + 1) \(Int($0.actualRPM))rpm(\($0.modeLabel))" }.joined(separator: " / "))
             sleepUnlessStopped(2)
         }
         finishBackgroundControl(fc)
