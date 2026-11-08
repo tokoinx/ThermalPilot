@@ -1,0 +1,150 @@
+<!-- タイトル案: 【 Mac が熱い・・・ThermalPilot つくりました 🌡️✨】 -->
+<!-- はてなブログ「HTML 編集」モードに, この下をそのまま貼り付けてください -->
+
+<p>本日は, <strong>Mac が熱くなる問題</strong> と, それを ｢見える化｣ するメニューバーアプリ <strong>ThermalPilot</strong> を作ったお話をしたいと思います 🌡️✨</p>
+
+<p>最近, Roblox Studio と Blender を開きっぱなしで作業していると, MacBook Pro のキーボードの上あたりが, じんわり熱くなってきまして・・・</p>
+
+<p>｢いま何度なの？｣ ｢何が原因なの？｣ ｢どうすれば冷えるの？｣ が, ひと目で分かるものが欲しくなりました 🌱</p>
+
+<p>そこで, Claude Code に <strong>GitHub の先行プロジェクトと Skills をリサーチ</strong> してもらい, そのまま実装までお願いしてみました✨</p>
+
+<p style="text-align: center;"><img src="https://raw.githubusercontent.com/tokoinx/ThermalPilot/main/docs/screenshot.png" alt="ThermalPilot のメニューバーパネル" width="360" /></p>
+
+<p>GitHub のリポジトリも公開しておりますので, もし, ご興味ありましたら, 覗いてみてください ✨</p>
+
+<p>【 GitHub 】<a href="https://github.com/tokoinx/ThermalPilot" target="_blank" rel="noopener">https://github.com/tokoinx/ThermalPilot</a></p>
+
+<h3>１. ThermalPilot とは 🌡️✨</h3>
+
+<p>メニューバーに常駐して, Mac の温度を ｢快適 / ほんのり / アツい / 危険｣ の 4 段階で表示する, 無料・オープンソース (MIT) のアプリです 🍵</p>
+
+<p>Apple Silicon (M1〜M5) と Intel の両方に対応しており, macOS 14 Sonoma 以降で動きます</p>
+
+<p>いちばんのこだわりは, ただ温度を見せるだけではなく <strong>｢熱の犯人候補｣ と ｢冷却アクション｣</strong> まで出すところです 🔎</p>
+
+<h3>２. できること 📋✨</h3>
+
+<table>
+<thead>
+<tr><th>機能</th><th>内容</th><th>管理者権限</th></tr>
+</thead>
+<tbody>
+<tr><td>温度の表示</td><td>CPU / GPU / SSD / バッテリーのセンサーを, カテゴリごとに一覧表示</td><td>不要</td></tr>
+<tr><td>温度の推移</td><td>直近 10 分ほどのグラフをパネル右上に表示</td><td>不要</td></tr>
+<tr><td>ファンの回転数</td><td>現在の rpm と, 自動 / 手動のモード</td><td>不要</td></tr>
+<tr><td>熱の犯人候補</td><td>CPU 使用率の高いアプリを上から 5 つ表示。その場で終了もできます</td><td>不要</td></tr>
+<tr><td>通知</td><td>｢アツい｣ 以上になったら通知。しきい値の付近でバタつかない工夫入り</td><td>不要</td></tr>
+<tr><td>低電力モード</td><td>ボタン 1 つで ON / OFF。｢危険｣ になったら自動で ON にする設定も</td><td>必要</td></tr>
+<tr><td>ファン制御</td><td>付属の CLI <code>thermalctl</code> で ｢全開｣ や ｢温度追従｣ が可能 (オプトイン)</td><td>必要</td></tr>
+</tbody>
+</table>
+
+<p>ちなみに, 上のスクリーンショットでは, 犯人候補の筆頭が <strong>RobloxStudio (38%)</strong> でした・・・ 何もしていなくても, これだけ使うんですね 🙈</p>
+
+<h3>３. Mac を冷やすために ｢本当に効く｣ 3 つのこと 🧊✨</h3>
+
+<p>作ってみて分かったのですが, Mac の温度は, macOS 自身 (thermalmonitord という常駐プログラム) が, ほぼ完璧に自動管理しています</p>
+
+<p>なので, アプリ側でできることは, 実は 3 つしかありません</p>
+
+<ol>
+<li><strong>熱源を止める</strong>・・・ 暴走しているアプリを見つけて, 閉じる。これがいちばん効きます</li>
+<li><strong>電力を絞る</strong>・・・ 低電力モードを ON にする。数分で 5〜10 ℃ 下がることが多いです</li>
+<li><strong>ファンを先回りで回す</strong>・・・ 静音優先の macOS より早めに回して, ピークを抑える</li>
+</ol>
+
+<p>ThermalPilot は, 1 と 2 を標準機能にして, 3 は ｢やりたい人だけ｣ のオプトインにしました</p>
+
+<p>というのも, Apple Silicon では, ファンを手動で回しても macOS が数秒で制御を取り返してしまい, 設定を間違えるとハードウェアを傷める可能性もあるためです ⚠️</p>
+
+<h3>４. 作り方 (Claude Code にお任せしました) 🤖✨</h3>
+
+<p>今回の流れは, こんな感じでした</p>
+
+<ol>
+<li>Claude Code に ｢Mac の温度を管理するアプリを作りたい。まず GitHub のリポジトリから Skills 等をリサーチして｣ とお願い</li>
+<li>先行プロジェクト (macmon, FanBar, smctl, agoodkind/macos-smc-fan など) と, Apple 開発用の Claude Skills (rshankras/claude-code-apple-skills) を調査してもらう</li>
+<li>調査結果をもとに, Swift Package として実装。ユニットテストも 15 件</li>
+<li>Mac で <code>swift build</code> と <code>swift test</code> を通して, 実機のセンサー名を見ながら表示を調整</li>
+<li>GitHub に公開</li>
+</ol>
+
+<p>調査で分かった, ちょっと面白いポイントです 🔎</p>
+
+<ul>
+<li>Apple Silicon の温度は SMC ではなく, <strong>IOHID のセンサーハブ</strong> という非公開 API から読む (macmon や Stats と同じ方式)</li>
+<li>2026 年は, Swift 製のファン制御アプリが <strong>10 本以上</strong> 乱立していて, ｢ファンを回す｣ だけでは差がつかない</li>
+<li>Apple Silicon でファンを手動制御するには, <code>Ftst</code> という診断フラグでロックを外す必要がある (agoodkind さんの研究)</li>
+</ul>
+
+<p>調査レポートはリポジトリの <code>docs/RESEARCH.md</code> に, Claude Code 用の Skill は <code>.claude/skills/</code> に入れてあります 📚</p>
+
+<h3>５. 導入手順 (3 ステップ) 🛠️✨</h3>
+
+<p>Xcode 16 以降が入っていれば, ターミナルで 3 つ実行するだけです</p>
+
+<p><strong>手順 1：クローン</strong></p>
+<pre><code>git clone https://github.com/tokoinx/ThermalPilot.git &amp;&amp; cd ThermalPilot</code></pre>
+
+<p><strong>手順 2：ビルド (アプリと CLI を dist/ に作ります)</strong></p>
+<pre><code>bash scripts/build-app.sh</code></pre>
+
+<p><strong>手順 3：起動</strong></p>
+<pre><code>open dist/ThermalPilot.app</code></pre>
+
+<p>メニューバー右上に, 温度計のアイコンが出れば成功です ✨ 常用する場合は <code>/Applications</code> にコピーしてください</p>
+
+<h3>６. つまずきやすいところ 🪤</h3>
+
+<table>
+<thead>
+<tr><th>症状</th><th>対処</th></tr>
+</thead>
+<tbody>
+<tr><td>｢開発元を確認できないため開けません｣</td><td>自分でビルドした署名なしアプリのため。システム設定 → プライバシーとセキュリティ → ｢このまま開く｣ で通ります</td></tr>
+<tr><td>アイコンが見当たらない</td><td>ノッチ付きの MacBook では, メニューバーが混んでいると隠れます。他の常駐アプリを減らすか, Finder を前面にして確認</td></tr>
+<tr><td>zip で入手して <code>killed</code> と出る</td><td>隔離属性が原因です。<code>xattr -dr com.apple.quarantine ThermalPilot</code> を 1 度実行</td></tr>
+</tbody>
+</table>
+
+<h3>７. 注意点 ⚠️</h3>
+
+<ul>
+<li>温度の読み取りに <strong>非公開 API</strong> を使っているため, Mac App Store では配布できません (自分でビルドして使う形です)</li>
+<li>ファン制御 (<code>sudo thermalctl</code>) は <strong>自己責任</strong> でお願いします。ハードウェアが報告する範囲内に収める安全策は入れていますが, 無理に回すのはおすすめしません</li>
+<li>MacBook Air などのファンレス機では, ファン欄は出ません (温度と犯人候補は使えます)</li>
+</ul>
+
+<h3>８. まとめ 🌱✨</h3>
+
+<p>｢熱い｣ と感じたら, まず犯人を見つけて閉じる。それでもダメなら低電力モード。ファンは最後の手段</p>
+
+<p>この順番が分かっただけでも, 作った価値がありました 🍵</p>
+
+<p>Roblox Studio や Blender で長時間作業される方は, ぜひ, 気軽にお試しください ✨</p>
+
+<h3>参考にしたページ 📚</h3>
+
+<ul>
+<li><a href="https://github.com/tokoinx/ThermalPilot" target="_blank" rel="noopener">ThermalPilot (GitHub)</a>：今回のアプリ。README と調査レポート</li>
+<li><a href="https://github.com/vladkens/macmon" target="_blank" rel="noopener">macmon (GitHub)</a>：Apple Silicon の温度読み取りの参考実装</li>
+<li><a href="https://github.com/agoodkind/macos-smc-fan" target="_blank" rel="noopener">macos-smc-fan (GitHub)</a>：Apple Silicon のファン制御の研究</li>
+<li><a href="https://github.com/helson-lin/FanBar" target="_blank" rel="noopener">FanBar (GitHub)</a>：2026 年のメニューバー型ファン制御アプリ</li>
+<li><a href="https://github.com/rshankras/claude-code-apple-skills" target="_blank" rel="noopener">claude-code-apple-skills (GitHub)</a>：Apple 開発用の Claude Code Skills</li>
+</ul>
+
+<p>それでは, 今回は, これでおしまいです✨ ありがとうございました (o'(ェ)')_🍙 ✨</p>
+
+<hr />
+
+<p>前提知識がなくても読める, Python と Lua の入門書を書いております 📖 Kindle Unlimited に登録されている方は, 追加料金なしで読めますので, ご興味ありましたら, 覗いてみてください ✨</p>
+
+<ul>
+<li>【Amazon】<a href="https://amzn.to/43ZEFgP" target="_blank" rel="noopener">はじめてのプログラミング Python 入門者になるための１歩 for Windows11</a></li>
+<li>【Amazon】<a href="https://amzn.to/4p5PV3B" target="_blank" rel="noopener">はじめてのプログラミング Lua - 教科書 ① for Windows11</a></li>
+</ul>
+
+<p>何卒, よろしくお願いいたします 🍵✨</p>
+
+<p>#Mac #MacBookPro #温度 #熱い #ファン制御 #AppleSilicon #Swift #SwiftUI #ClaudeCode #オープンソース #無料</p>
