@@ -3,29 +3,11 @@
 Mac が熱くなったとき、**「いま何度で、何が原因で、どうすれば冷えるか」** を 1 クリックで見せるメニューバーアプリ。
 Apple Silicon (M1〜M5) と Intel Mac の両対応。macOS 14 Sonoma 以降。
 
-```
-┌──────────────────────────────────────────┐
-│ 🌡 84°  [アツい]   ╭─╮  ╭╮ ╭──  (履歴)    │
-│ 🔥 そろそろ一服させましょう。             │
-│ OS サーマル: 高い (性能制限中)            │
-├──────────────────────────────────────────┤
-│ ▾ CPU                       最高 84°     │
-│     CPU ダイ 1   ████████░░  84.2°       │
-│     CPU ダイ 5   ███████░░░  79.8°       │
-│ ▸ GPU                       最高 71°     │
-│ ▸ SSD                       最高 46°     │
-├──────────────────────────────────────────┤
-│ 🌀 ファン 1  システム管理  ████░░  3,180 rpm │
-├──────────────────────────────────────────┤
-│ 熱の犯人候補 (CPU 上位)              📊  │
-│   Google Chrome Helper (Renderer)  142% ⊗│
-│   RobloxStudio                      68% ⊗│
-├──────────────────────────────────────────┤
-│ 冷却アクション                            │
-│  [🍃 低電力モード: OFF]  [💨 ファン全開]   │
-│  💡 Google Chrome Helper を一時停止すると…│
-└──────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/screenshot.png" width="360" alt="ThermalPilot のメニューバーパネル。代表温度 40° と快適レベル、温度の推移、CPU/GPU/SSD/バッテリーのセンサー、ファン回転数、CPU 上位プロセス、冷却アクション">
+</p>
+
+[English README](README.en.md)
 
 ## できること
 
@@ -56,7 +38,7 @@ Mac の温度は **OS (thermalmonitord) がほぼ完璧に自動管理** して�
 必要なもの: macOS 14+, Xcode 16 以降 (Swift 5.10+。Xcode 26 / Swift 6 でも可)。外部パッケージ依存なし。
 
 ```bash
-git clone <このリポジトリ> && cd ThermalPilot
+git clone https://github.com/tokoinx/ThermalPilot.git && cd ThermalPilot
 ./scripts/build-app.sh          # dist/ThermalPilot.app ができる (ad-hoc 署名)
 open dist/ThermalPilot.app
 ```
