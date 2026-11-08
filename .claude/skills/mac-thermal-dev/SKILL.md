@@ -54,7 +54,7 @@ description: Mac の温度・ファン・SMC・IOHID センサーを扱う Swift
 - **Linux でビルドが通っても macOS で通るとは限らない**。例: `fork()` は Swift on Darwin では unavailable (Glibc では使える)。この CLI は Linux CI でビルドされるが、Darwin 固有の可否はユーザーの Mac でしか確認できない。新しい API を足す時は、既に Mac でビルド済みの API を優先し、確認できていないことを明言する。
 - **置換スクリプトは一致件数を検証する**。Python の `str.replace` は不一致でも黙って何もしない。過去に「反映した」と報告した変更が実際には入っていなかった。
 - 診断ログ: thermalctl は root 時のみ `/var/log/thermalctl.log`、アプリは `~/Library/Logs/ThermalPilot.log`。原因が推測の段階では修正を主張せず、まずログで確認する。
-- **2026-11-08 Apple M1 実機で確認済み**: アプリの「ファン全開」(osascript の前面実行) と、停止ファイルによるパスワード無しの「自動に戻す」。未確認: `--parent` によるアプリ終了時の停止、`curve`、Intel と M2〜M5。
+- **2026-11-08 Apple M1 (macOS 14.8.3) 実機で確認済み**: アプリの「ファン全開」(osascript の前面実行) と、停止ファイルによるパスワード無しの「自動に戻す」。未確認: `--parent` によるアプリ終了時の停止、`curve`、Intel と M2〜M5。
 - **アプリから root の boost をパスワード無しで止める**には停止ファイルを使う (`--stop-file PATH`)。一般ユーザーは root にシグナルを送れない。アプリが作成・削除し、root は `fileExists` で存在を確かめるだけ (root が利用者のパスを書き込み・削除すると、シンボリックリンクで悪用されうるため)。確認間隔 0.1 秒、Linux の再現テストで反応は最大 0.1 秒。
 - **boost / curve は長時間ループ**。`auto` は必ず先に `BackgroundFanController.stop()` で止める (止めないと 2 秒後に再設定されて「戻らない」バグになる)。アプリからは `/usr/bin/osascript` を子プロセスで起動し、`do shell script ... with administrator privileges` の**前面**で boost を実行する。同じ admin の `do shell script` 配下で `nohup ... &` を使うと thermalctl が一度も起動しなかった (2026-11 実機ログ: AppleScript は成功、thermalctl のログもプロセスも無し)。前面実行は最初の版でファンを保持できていた。
 - M2 / M3 は未検証。実機で `thermalctl keys F` を見てから書く。

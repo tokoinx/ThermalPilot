@@ -108,7 +108,7 @@ docs/RESEARCH.md        survey of prior projects, Claude Skills and SMC keys (Ja
 
 ## Verification
 
-As of 2026-11-08, on an Apple M1 Mac. Items not tested are marked "not verified".
+As of 2026-11-08, on an Apple M1 Mac running macOS 14.8.3. Items not tested are marked "not verified".
 
 | Item | Status |
 |---|---|
