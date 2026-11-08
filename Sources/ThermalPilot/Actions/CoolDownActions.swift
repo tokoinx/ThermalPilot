@@ -62,18 +62,52 @@ enum CoolDownActions {
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
-    /// `sudo thermalctl <args>` 相当を、管理者認証ダイアログ付きで実行する。
-    /// `detached: true` なら nohup + & でバックグラウンド起動し、すぐ戻る (boost / curve のような長時間ループ用)。
-    static func runThermalctl(_ args: [String], detached: Bool = false) async -> Bool {
+    /// `sudo thermalctl <args>` 相当を、管理者認証ダイアログ付きで実行し、終わるまで待つ (auto のような短い処理用)。
+    static func runThermalctl(_ args: [String]) async -> Bool {
         guard let path = thermalctlPath() else { return false }
-        var cmd = ([path] + args).map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
-        if detached {
-            cmd = "nohup \(cmd) >/dev/null 2>&1 &"
-        }
+        let cmd = ([path] + args).map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
         let escaped = cmd.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let script = "do shell script \"\(escaped)\" with administrator privileges"
         AppLog.write("thermalctl 実行: \(script)")
         return await runAppleScript(script)
+    }
+
+    /// boost のような長い root 処理を、管理者認証付きで「前面」実行する。
+    /// - thermalctl は do shell script の前面で動き続け、終わるまで osascript プロセスも残る。
+    ///   最初の版はこの方式でファンを全開に保てていた。
+    /// - nohup + & のバックグラウンド起動は、実機ログで thermalctl が一度も起動しなかったので使わない。
+    /// - アプリ内の NSAppleScript を何分も占有しないよう、osascript を子プロセスとして起動してすぐ戻る。
+    /// - 戻り値は osascript のプロセス。起動自体に失敗したら nil。
+    static func launchThermalctlInForeground(_ args: [String]) -> Process? {
+        guard let path = thermalctlPath() else {
+            AppLog.write("thermalctl が見つかりません")
+            return nil
+        }
+        // 標準出力だけ捨てる。標準エラーは残し、失敗した時の理由が osascript のエラーに載るようにする
+        let cmd = ([path] + args).map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
+            + " >/dev/null"
+        let escaped = cmd.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let script = "do shell script \"\(escaped)\" with administrator privileges"
+        AppLog.write("osascript で前面実行: \(script)")
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        task.arguments = ["-e", script]
+        task.standardOutput = FileHandle.nullDevice
+        let errorPipe = Pipe()
+        task.standardError = errorPipe
+        task.terminationHandler = { finished in
+            let data = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let message = (String(data: data, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            AppLog.write("osascript 終了: 終了コード \(finished.terminationStatus)" + (message.isEmpty ? "" : " / \(message)"))
+        }
+        do {
+            try task.run()
+        } catch {
+            AppLog.write("osascript を起動できません: \(error)")
+            return nil
+        }
+        return task
     }
 
     // MARK: ヘルパー

@@ -54,7 +54,7 @@ description: Mac の温度・ファン・SMC・IOHID センサーを扱う Swift
 - **Linux でビルドが通っても macOS で通るとは限らない**。例: `fork()` は Swift on Darwin では unavailable (Glibc では使える)。この CLI は Linux CI でビルドされるが、Darwin 固有の可否はユーザーの Mac でしか確認できない。新しい API を足す時は、既に Mac でビルド済みの API を優先し、確認できていないことを明言する。
 - **置換スクリプトは一致件数を検証する**。Python の `str.replace` は不一致でも黙って何もしない。過去に「反映した」と報告した変更が実際には入っていなかった。
 - 診断ログ: thermalctl は root 時のみ `/var/log/thermalctl.log`、アプリは `~/Library/Logs/ThermalPilot.log`。原因が推測の段階では修正を主張せず、まずログで確認する。
-- **boost / curve は長時間ループ**。`auto` は必ず先に `BackgroundFanController.stop()` で止める (止めないと 2 秒後に再設定されて「戻らない」バグになる)。アプリからは `nohup ... &` で detached 起動し、`do shell script` を 10 分ブロックさせない。
+- **boost / curve は長時間ループ**。`auto` は必ず先に `BackgroundFanController.stop()` で止める (止めないと 2 秒後に再設定されて「戻らない」バグになる)。アプリからは `/usr/bin/osascript` を子プロセスで起動し、`do shell script ... with administrator privileges` の**前面**で boost を実行する。同じ admin の `do shell script` 配下で `nohup ... &` を使うと thermalctl が一度も起動しなかった (2026-11 実機ログ: AppleScript は成功、thermalctl のログもプロセスも無し)。前面実行は最初の版でファンを保持できていた。
 - M2 / M3 は未検証。実機で `thermalctl keys F` を見てから書く。
 
 ## 権限と配布

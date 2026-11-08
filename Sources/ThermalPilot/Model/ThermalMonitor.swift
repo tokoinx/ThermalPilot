@@ -25,6 +25,8 @@ final class ThermalMonitor {
     @ObservationIgnored private var lastNotifiedLevel: ThermalLevel = .cool
     @ObservationIgnored private var lastNotificationDate: Date = .distantPast
     @ObservationIgnored private var autoLowPowerTriggered = false
+    /// 「ファン全開」で起動した osascript (thermalctl boost を前面で実行中)。
+    @ObservationIgnored private var boostProcess: Process?
 
     private static let historyLimit = 200
 
@@ -137,25 +139,36 @@ final class ThermalMonitor {
     }
 
     func boostFans(minutes: Int = 10) {
+        let appPID = ProcessInfo.processInfo.processIdentifier
+        AppLog.write("「ファン全開」ボタン: アプリ PID \(appPID)")
+        // boost は認証後に前面で動き続ける。--parent: このアプリが終了したら boost も自動で終わる
+        guard let process = CoolDownActions.launchThermalctlInForeground(
+            ["boost", "--minutes", String(minutes), "--parent", String(appPID)]
+        ) else {
+            lastError = "ファン全開を起動できませんでした。理由は ~/Library/Logs/ThermalPilot.log にあります"
+            return
+        }
+        boostProcess = process
+        lastError = nil
         Task {
-            // boost は最大 N 分のループなので、バックグラウンドで起動してすぐ戻る
-            // --parent: このアプリが終了したら boost も自動で終わる
-            AppLog.write("「ファン全開」ボタン: アプリ PID \(ProcessInfo.processInfo.processIdentifier)")
-            let ok = await CoolDownActions.runThermalctl(
-                ["boost", "--minutes", String(minutes), "--parent", String(ProcessInfo.processInfo.processIdentifier)],
-                detached: true
-            )
-            if !ok {
-                lastError = "ファン全開を起動できませんでした。理由は ~/Library/Logs/ThermalPilot.log にあります"
-                refreshNow()
-                return
+            // パスワード入力を待つので、最大 120 秒まで 0.5 秒ごとに確認する
+            for _ in 0..<240 {
+                try? await Task.sleep(for: .milliseconds(500))
+                if BackgroundFanController.isAnyControllerRunning {
+                    isFanBoostActive = true
+                    AppLog.write("ファン制御の起動を確認")
+                    refreshNow()
+                    return
+                }
+                if !process.isRunning {
+                    isFanBoostActive = false
+                    AppLog.write("ファン制御が起動しないまま osascript が終了")
+                    lastError = "ファン全開を起動できませんでした。キャンセルまたはエラーです。理由は ~/Library/Logs/ThermalPilot.log にあります"
+                    refreshNow()
+                    return
+                }
             }
-            // 起動直後は PID ファイルがまだ無いことがあるので少し待ってから確認
-            try? await Task.sleep(for: .seconds(2.5))
-            isFanBoostActive = BackgroundFanController.isAnyControllerRunning
-            AppLog.write("2.5 秒後の確認: ファン制御プロセス \(isFanBoostActive ? "あり" : "なし")")
-            lastError = isFanBoostActive ? nil : "ファン全開を起動しましたが、動作を確認できません。/var/log/thermalctl.log を見てください"
-            refreshNow()
+            AppLog.write("120 秒待ってもファン制御を確認できませんでした")
         }
     }
 
@@ -167,6 +180,7 @@ final class ThermalMonitor {
             lastError = ok ? nil : "自動に戻せませんでした。理由は ~/Library/Logs/ThermalPilot.log にあります"
             isFanBoostActive = BackgroundFanController.isAnyControllerRunning
             AppLog.write("「自動に戻す」後: ファン制御プロセス \(isFanBoostActive ? "あり" : "なし")")
+            if !isFanBoostActive { boostProcess = nil }
             refreshNow()
         }
     }
